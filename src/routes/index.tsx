@@ -6,6 +6,7 @@ import type { Direction } from "@/game/types";
 
 export const Route = createFileRoute("/")({
   component: Index,
+  ssr: false,
   head: () => ({
     meta: [
       { title: "lb-PacMan Multiplayer — 4 jogadores em tempo real" },
@@ -29,14 +30,8 @@ function genId(): string {
 }
 
 function Index() {
-  const [hydrated, setHydrated] = useState(false);
   const [playerName, setPlayerName] = useState<string | null>(null);
-  const [selfId, setSelfId] = useState<string>("");
-
-  useEffect(() => {
-    setSelfId(genId());
-    setHydrated(true);
-  }, []);
+  const [selfId] = useState(() => genId());
 
   return (
     <div
@@ -66,7 +61,7 @@ function Index() {
         </p>
       </header>
 
-      {!hydrated ? null : !playerName ? (
+      {!playerName ? (
         <Lobby onJoin={(name) => setPlayerName(name)} />
       ) : (
         <Game selfId={selfId} name={playerName} />
