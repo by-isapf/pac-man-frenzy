@@ -293,18 +293,40 @@ function Game({ selfId, name }: { selfId: string; name: string }) {
       w: "up", s: "down", a: "left", d: "right",
       W: "up", S: "down", A: "left", D: "right",
     };
-    const onKey = (e: KeyboardEvent) => {
+    const releaseKeys = new Set<string>([
+      "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "w", "a", "s", "d", "W", "A", "S", "D",
+    ]);
+
+    const onKeyDown = (e: KeyboardEvent) => {
       const dir = map[e.key];
       if (!dir) return;
       e.preventDefault();
-      // Don't dedupe held keys — let auto-repeat keep the player turning at every
-      // intersection. Cheap on the wire and removes any perceived input lag.
       if (e.repeat && lastDirRef.current === dir) return;
       lastDirRef.current = dir;
       sendInput(dir);
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (!releaseKeys.has(e.key)) return;
+      if (lastDirRef.current === "none") return;
+      lastDirRef.current = "none";
+      sendInput("none");
+    };
+
+    const onBlur = () => {
+      if (lastDirRef.current === "none") return;
+      lastDirRef.current = "none";
+      sendInput("none");
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    };
   }, [sendInput]);
 
   const players = state ? Object.values(state.players).sort((a, b) => b.score - a.score) : [];

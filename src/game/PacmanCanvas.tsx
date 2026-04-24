@@ -72,18 +72,22 @@ export function PacmanCanvas({ state, selfId }: Props) {
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // walls (single path with glow — much cheaper than per-cell rect)
+      // walls — dark body with neon outline, less blocky visually
       const wallPath = wallPathRef.current;
       if (wallPath) {
         ctx.save();
-        ctx.shadowColor = WALL_GLOW;
-        ctx.shadowBlur = 10;
-        ctx.fillStyle = WALL_FILL;
+        ctx.fillStyle = "rgba(8, 14, 34, 0.6)";
         ctx.fill(wallPath);
-        ctx.restore();
-        ctx.strokeStyle = WALL_INNER;
-        ctx.lineWidth = 1.5;
+        ctx.lineJoin = "round";
+        ctx.shadowColor = WALL_GLOW;
+        ctx.shadowBlur = 18;
+        ctx.strokeStyle = "rgba(96, 165, 250, 0.28)";
+        ctx.lineWidth = 5;
         ctx.stroke(wallPath);
+        ctx.strokeStyle = WALL_INNER;
+        ctx.lineWidth = 1.7;
+        ctx.stroke(wallPath);
+        ctx.restore();
       }
 
       const s = stateRef.current;

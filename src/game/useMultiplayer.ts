@@ -11,8 +11,8 @@ import {
 import type { Direction, GameState, RoomMsg } from "./types";
 
 const ROOM = "pacman-room-v1";
-const TICK_MS = 110;        // host tick rate (~9/s) — snappier movement
-const BROADCAST_MS = 90;    // state broadcasts (~11/s) — canvas interpolates
+const TICK_MS = 90;         // local authoritative loop for host
+const BROADCAST_MS = 120;   // remote sync cadence
 
 export interface ActionLog {
   ts: number;
@@ -20,6 +20,18 @@ export interface ActionLog {
   name: string;
   action: string;
   position: { col: number; row: number };
+}
+
+function cloneState(state: GameState): GameState {
+  return {
+    ...state,
+    players: Object.fromEntries(
+      Object.entries(state.players).map(([id, player]) => [id, { ...player }]),
+    ),
+    ghosts: state.ghosts.map((ghost) => ({ ...ghost })),
+    pellets: [...state.pellets],
+    powerPellets: [...state.powerPellets],
+  };
 }
 
 export function useMultiplayer(selfId: string, name: string) {
@@ -35,7 +47,6 @@ export function useMultiplayer(selfId: string, name: string) {
   const bcastIntervalRef = useRef<number | null>(null);
   const lastStateAtRef = useRef<number>(0);
 
-  // helper to push log entries
   const pushLog = (entry: ActionLog) => {
     setLogs((prev) => {
       const next = [entry, ...prev];
@@ -51,11 +62,23 @@ export function useMultiplayer(selfId: string, name: string) {
     });
     channelRef.current = channel;
 
+    const publishHostSnapshot = () => {
+      const cur = hostStateRef.current;
+      if (!cur) return;
+      const snapshot = cloneState(cur);
+      setState(snapshot);
+      lastStateAtRef.current = Date.now();
+      channel.send({
+        type: "broadcast",
+        event: "state",
+        payload: { type: "state", state: snapshot, ts: Date.now() } as RoomMsg,
+      });
+    };
+
     const becomeHost = () => {
       if (isHostRef.current) return;
       isHostRef.current = true;
       const s = createInitialState(selfId);
-      // spawn all currently-present players
       const presence = channel.presenceState() as Record<string, Array<{ name: string }>>;
       for (const [pid, metas] of Object.entries(presence)) {
         const meta = metas[0];
@@ -63,13 +86,21 @@ export function useMultiplayer(selfId: string, name: string) {
       }
       hostStateRef.current = s;
       setHostId(selfId);
+      setState(cloneState(s));
+      lastStateAtRef.current = Date.now();
 
       tickIntervalRef.current = window.setInterval(() => {
         const cur = hostStateRef.current;
         if (!cur) return;
         const events = step(cur);
         for (const ev of events) {
-          if (ev.type === "pellet" || ev.type === "power" || ev.type === "ghost-eaten" || ev.type === "player-died" || ev.type === "win") {
+          if (
+            ev.type === "pellet" ||
+            ev.type === "power" ||
+            ev.type === "ghost-eaten" ||
+            ev.type === "player-died" ||
+            ev.type === "win"
+          ) {
             const p = ev.playerId ? cur.players[ev.playerId] : undefined;
             if (p) {
               pushLog({
@@ -82,17 +113,29 @@ export function useMultiplayer(selfId: string, name: string) {
             }
           }
         }
+        setState(cloneState(cur));
+        lastStateAtRef.current = Date.now();
       }, TICK_MS);
 
       bcastIntervalRef.current = window.setInterval(() => {
-        const cur = hostStateRef.current;
-        if (!cur) return;
-        channel.send({
-          type: "broadcast",
-          event: "state",
-          payload: { type: "state", state: cur, ts: Date.now() } as RoomMsg,
-        });
+        publishHostSnapshot();
       }, BROADCAST_MS);
+    };
+
+    const syncHostPlayers = () => {
+      if (!isHostRef.current || !hostStateRef.current) return;
+      const s = hostStateRef.current;
+      const presence = channel.presenceState() as Record<string, Array<{ name: string }>>;
+      const presentIds = new Set(Object.keys(presence));
+      for (const pid of Object.keys(s.players)) {
+        if (!presentIds.has(pid)) removePlayer(s, pid);
+      }
+      for (const [pid, metas] of Object.entries(presence)) {
+        if (!s.players[pid]) {
+          spawnPlayer(s, pid, metas[0]?.name ?? `lb-${pid.slice(0, 4)}`);
+        }
+      }
+      setState(cloneState(s));
     };
 
     const electHost = () => {
@@ -110,32 +153,20 @@ export function useMultiplayer(selfId: string, name: string) {
 
     channel
       .on("presence", { event: "sync" }, () => {
-        // re-elect host if needed
         if (!isHostRef.current) electHost();
-        // if we're host, sync players list (add new, remove gone)
-        if (isHostRef.current && hostStateRef.current) {
-          const s = hostStateRef.current;
-          const presence = channel.presenceState() as Record<string, Array<{ name: string }>>;
-          const presentIds = new Set(Object.keys(presence));
-          for (const pid of Object.keys(s.players)) {
-            if (!presentIds.has(pid)) removePlayer(s, pid);
-          }
-          for (const [pid, metas] of Object.entries(presence)) {
-            if (!s.players[pid]) {
-              spawnPlayer(s, pid, metas[0]?.name ?? `lb-${pid.slice(0, 4)}`);
-            }
-          }
-        }
+        syncHostPlayers();
       })
       .on("presence", { event: "join" }, ({ key, newPresences }) => {
         if (isHostRef.current && hostStateRef.current) {
           const meta = newPresences[0] as { name?: string } | undefined;
           spawnPlayer(hostStateRef.current, key, meta?.name ?? `lb-${key.slice(0, 4)}`);
+          setState(cloneState(hostStateRef.current));
         }
       })
       .on("presence", { event: "leave" }, ({ key }) => {
         if (isHostRef.current && hostStateRef.current) {
           removePlayer(hostStateRef.current, key);
+          setState(cloneState(hostStateRef.current));
         }
       })
       .on("broadcast", { event: "input" }, ({ payload }) => {
@@ -146,12 +177,11 @@ export function useMultiplayer(selfId: string, name: string) {
             spawnPlayer(hostStateRef.current, msg.playerId, msg.name);
           }
           setPlayerDir(hostStateRef.current, msg.playerId, msg.dir);
-          // also log this action (mimics SQS visibility)
           pushLog({
             ts: msg.ts,
             playerId: msg.playerId,
             name: msg.name,
-            action: `move:${msg.dir}`,
+            action: msg.dir === "none" ? "stop" : `move:${msg.dir}`,
             position: {
               col: hostStateRef.current.players[msg.playerId]?.col ?? 0,
               row: hostStateRef.current.players[msg.playerId]?.row ?? 0,
@@ -160,6 +190,7 @@ export function useMultiplayer(selfId: string, name: string) {
         }
       })
       .on("broadcast", { event: "state" }, ({ payload }) => {
+        if (isHostRef.current) return;
         const msg = payload as RoomMsg;
         if (msg.type !== "state") return;
         lastStateAtRef.current = Date.now();
@@ -171,17 +202,15 @@ export function useMultiplayer(selfId: string, name: string) {
       if (status === "SUBSCRIBED") {
         await channel.track({ name, joinedAt: Date.now() });
         setConnected(true);
-        // wait a tick, then elect host
-        window.setTimeout(electHost, 400);
+        window.setTimeout(electHost, 250);
       }
     });
 
-    // safety: if no host broadcasts received in 3s, try host election
     const watchdog = window.setInterval(() => {
       if (isHostRef.current) return;
       const since = Date.now() - lastStateAtRef.current;
-      if (since > 3000) electHost();
-    }, 1500);
+      if (since > 2500) electHost();
+    }, 1200);
 
     return () => {
       window.clearInterval(watchdog);
@@ -198,11 +227,10 @@ export function useMultiplayer(selfId: string, name: string) {
   const sendInput = (dir: Direction) => {
     const ch = channelRef.current;
     if (!ch) return;
-    // Optimistic local apply: if we're the host, mutate authoritative state directly.
-    // Either way, also nudge the rendered state so this client never waits for the
-    // round-trip through the realtime channel before seeing its own input react.
+
     if (isHostRef.current && hostStateRef.current) {
       setPlayerDir(hostStateRef.current, selfId, dir);
+      setState(cloneState(hostStateRef.current));
     } else {
       setState((prev) => {
         if (!prev) return prev;
@@ -217,6 +245,7 @@ export function useMultiplayer(selfId: string, name: string) {
         };
       });
     }
+
     const msg: RoomMsg = { type: "input", playerId: selfId, name, dir, ts: Date.now() };
     ch.send({ type: "broadcast", event: "input", payload: msg });
   };
