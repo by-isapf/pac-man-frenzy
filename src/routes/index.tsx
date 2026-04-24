@@ -29,13 +29,14 @@ function genId(): string {
 }
 
 function Index() {
-  const [rawName, setRawName] = useState("");
-  const [joined, setJoined] = useState(false);
-  const [selfId] = useState(() => genId());
-  const playerName = useMemo(() => {
-    const clean = rawName.trim().replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
-    return clean ? `lb-${clean}` : "";
-  }, [rawName]);
+  const [hydrated, setHydrated] = useState(false);
+  const [playerName, setPlayerName] = useState<string | null>(null);
+  const [selfId, setSelfId] = useState<string>("");
+
+  useEffect(() => {
+    setSelfId(genId());
+    setHydrated(true);
+  }, []);
 
   return (
     <div
@@ -65,13 +66,8 @@ function Index() {
         </p>
       </header>
 
-      {!joined ? (
-        <Lobby
-          rawName={rawName}
-          setRawName={setRawName}
-          playerName={playerName}
-          onJoin={() => playerName && setJoined(true)}
-        />
+      {!hydrated ? null : !playerName ? (
+        <Lobby onJoin={(name) => setPlayerName(name)} />
       ) : (
         <Game selfId={selfId} name={playerName} />
       )}
@@ -79,15 +75,17 @@ function Index() {
   );
 }
 
-function Lobby({
-  rawName,
-  setRawName,
-  playerName,
-  onJoin,
-}: {
-  rawName: string;
-  setRawName: (v: string) => void;
-  playerName: string;
+function Lobby({ onJoin }: { onJoin: (name: string) => void }) {
+  const [rawName, setRawName] = useState("");
+  const playerName = useMemo(() => {
+    const clean = rawName.trim().replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
+    return clean ? `lb-${clean}` : "";
+  }, [rawName]);
+  const handleJoin = () => {
+    if (playerName) onJoin(playerName);
+  };
+  // Unused props placeholder removed; keep TS happy
+  type _Unused = {
   onJoin: () => void;
 }) {
   return (
