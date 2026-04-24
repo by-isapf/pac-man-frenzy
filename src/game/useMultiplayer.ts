@@ -11,8 +11,8 @@ import {
 import type { Direction, GameState, RoomMsg } from "./types";
 
 const ROOM = "pacman-room-v1";
-const TICK_MS = 160;        // host tick rate (~6/s) — canvas interpolates between
-const BROADCAST_MS = 160;   // state broadcasts (~6/s) — interpolation hides this
+const TICK_MS = 110;        // host tick rate (~9/s) — snappier movement
+const BROADCAST_MS = 90;    // state broadcasts (~11/s) — canvas interpolates
 
 export interface ActionLog {
   ts: number;
@@ -198,6 +198,25 @@ export function useMultiplayer(selfId: string, name: string) {
   const sendInput = (dir: Direction) => {
     const ch = channelRef.current;
     if (!ch) return;
+    // Optimistic local apply: if we're the host, mutate authoritative state directly.
+    // Either way, also nudge the rendered state so this client never waits for the
+    // round-trip through the realtime channel before seeing its own input react.
+    if (isHostRef.current && hostStateRef.current) {
+      setPlayerDir(hostStateRef.current, selfId, dir);
+    } else {
+      setState((prev) => {
+        if (!prev) return prev;
+        const p = prev.players[selfId];
+        if (!p) return prev;
+        return {
+          ...prev,
+          players: {
+            ...prev.players,
+            [selfId]: { ...p, nextDir: dir },
+          },
+        };
+      });
+    }
     const msg: RoomMsg = { type: "input", playerId: selfId, name, dir, ts: Date.now() };
     ch.send({ type: "broadcast", event: "input", payload: msg });
   };
