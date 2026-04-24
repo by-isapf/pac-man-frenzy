@@ -11,8 +11,8 @@ import {
 import type { Direction, GameState, RoomMsg } from "./types";
 
 const ROOM = "pacman-room-v1";
-const TICK_MS = 120;        // host tick rate (~8/s)
-const BROADCAST_MS = 100;   // state broadcasts (~10/s)
+const TICK_MS = 160;        // host tick rate (~6/s) — canvas interpolates between
+const BROADCAST_MS = 160;   // state broadcasts (~6/s) — interpolation hides this
 
 export interface ActionLog {
   ts: number;
