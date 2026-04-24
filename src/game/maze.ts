@@ -56,8 +56,9 @@ export const SPAWN_POINTS: Array<{ col: number; row: number }> = [
   { col: 17, row: 19 },
 ];
 
+// Ghosts spawn far from player corners, in the middle of the maze
 export const GHOST_SPAWNS: Array<{ col: number; row: number }> = [
-  { col: 9, row: 8 },
-  { col: 8, row: 14 },
-  { col: 10, row: 14 },
+  { col: 9, row: 10 },
+  { col: 8, row: 12 },
+  { col: 10, row: 12 },
 ];
