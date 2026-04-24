@@ -84,10 +84,6 @@ function Lobby({ onJoin }: { onJoin: (name: string) => void }) {
   const handleJoin = () => {
     if (playerName) onJoin(playerName);
   };
-  // Unused props placeholder removed; keep TS happy
-  type _Unused = {
-  onJoin: () => void;
-}) {
   return (
     <div
       style={{
