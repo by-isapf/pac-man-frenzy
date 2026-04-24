@@ -118,7 +118,7 @@ function Lobby({ onJoin }: { onJoin: (name: string) => void }) {
           autoFocus
           value={rawName}
           onChange={(e) => setRawName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && onJoin()}
+          onKeyDown={(e) => e.key === "Enter" && handleJoin()}
           placeholder="SEU_NOME"
           maxLength={16}
           style={{
@@ -137,7 +137,7 @@ function Lobby({ onJoin }: { onJoin: (name: string) => void }) {
         Identificador final: <strong style={{ color: "#FFEB3B" }}>{playerName || "—"}</strong>
       </p>
       <button
-        onClick={onJoin}
+        onClick={handleJoin}
         disabled={!playerName}
         style={{
           width: "100%",
