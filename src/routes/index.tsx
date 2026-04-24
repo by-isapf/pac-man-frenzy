@@ -297,7 +297,9 @@ function Game({ selfId, name }: { selfId: string; name: string }) {
       const dir = map[e.key];
       if (!dir) return;
       e.preventDefault();
-      if (lastDirRef.current === dir) return;
+      // Don't dedupe held keys — let auto-repeat keep the player turning at every
+      // intersection. Cheap on the wire and removes any perceived input lag.
+      if (e.repeat && lastDirRef.current === dir) return;
       lastDirRef.current = dir;
       sendInput(dir);
     };
